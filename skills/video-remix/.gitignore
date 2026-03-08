@@ -1,0 +1,11 @@
+# Python cache/build
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# OS/editor
+.DS_Store
+
+# Runtime outputs
+runs/

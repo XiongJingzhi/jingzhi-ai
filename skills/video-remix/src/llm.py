@@ -43,6 +43,30 @@ def _call_codex(prompt: str, cwd: Path) -> str | None:
             pass
 
 
+def _call_claude(prompt: str, cwd: Path) -> str | None:
+    try:
+        cmd = [
+            "claude",
+            "-p",
+            "--permission-mode",
+            "bypassPermissions",
+            "--output-format",
+            "text",
+            prompt,
+        ]
+        result = subprocess.run(
+            cmd,
+            cwd=str(cwd),
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=240,
+        )
+        return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError, TimeoutError):
+        return None
+
+
 def _call_openai(prompt: str) -> str | None:
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -71,6 +95,21 @@ def _call_openai(prompt: str) -> str | None:
         return None
 
 
+def _call_with_fallbacks(prompt: str, cwd: Path, providers: list[str]) -> str | None:
+    for provider in providers:
+        if provider == "claude":
+            text = _call_claude(prompt, cwd=cwd)
+        elif provider == "codex":
+            text = _call_codex(prompt, cwd=cwd)
+        elif provider == "openai":
+            text = _call_openai(prompt)
+        else:
+            continue
+        if text:
+            return text
+    return None
+
+
 def complete(run_dir: Path, task: str, prompt: str) -> str | None:
     if os.environ.get("VIDEO_REMIX_FAKE_LLM") == "1":
         if task == "analyze":
@@ -84,13 +123,11 @@ def complete(run_dir: Path, task: str, prompt: str) -> str | None:
 
     provider = os.environ.get("VIDEO_REMIX_LLM_PROVIDER", "agent").strip().lower()
     if provider == "agent":
-        text = _call_codex(prompt, cwd=run_dir)
-        if text:
-            return text
-        return _call_openai(prompt)
+        return _call_with_fallbacks(prompt, cwd=run_dir, providers=["claude", "codex", "openai"])
+    if provider == "claude":
+        return _call_with_fallbacks(prompt, cwd=run_dir, providers=["claude", "codex", "openai"])
     if provider == "openai":
-        text = _call_openai(prompt)
-        if text:
-            return text
-        return _call_codex(prompt, cwd=run_dir)
-    return _call_codex(prompt, cwd=run_dir) or _call_openai(prompt)
+        return _call_with_fallbacks(prompt, cwd=run_dir, providers=["openai", "claude", "codex"])
+    if provider == "codex":
+        return _call_with_fallbacks(prompt, cwd=run_dir, providers=["codex", "claude", "openai"])
+    return _call_with_fallbacks(prompt, cwd=run_dir, providers=["claude", "codex", "openai"])

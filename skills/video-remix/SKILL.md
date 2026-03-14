@@ -35,7 +35,9 @@ Do not use this skill when:
 - `--output`: `both`, `short`, or `long`
 - `--run-id` (optional but recommended for tracking/resume)
 - `--base-dir` (optional, default `runs`)
-- transcript correction provider: default `agent` (uses current Codex agent LLM), optional `openai` via `OPENAI_API_KEY`
+- transcript correction provider: default `agent` with fallback order `claude -> codex -> openai`
+- set `VIDEO_REMIX_LLM_PROVIDER=claude|codex|openai|agent` to choose the preferred provider
+- local Claude provider uses the machine `claude` CLI; OpenAI provider requires `OPENAI_API_KEY`
 
 ## Commands
 
@@ -79,4 +81,3 @@ Required artifacts:
 - `05_rewrite/diff.style-applied.md`
 - `final/script.short.md`
 - `final/article.long.md`
-

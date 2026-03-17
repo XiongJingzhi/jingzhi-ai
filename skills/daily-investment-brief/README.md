@@ -17,8 +17,9 @@
 
 当前实现：
 - 提供可执行 CLI，主动抓取公开市场数据后生成报告
-- 已接入的稳定源包括 `Stooq`、`FRED`、`CBOE`、`CNN` 页面解析、`Multpl` 页面解析，以及 A 股 ETF 行情接口
+- 已接入的源包括 `Stooq`、`FRED`、`CBOE`、`CNN` 页面解析、`Multpl` 页面解析、`ETFDB` 页面解析、`TSMC` 官方月营收页、`SIA` 搜索结果页、东方财富 ETF/基金页面
 - 任一上游超时或断连时，不会直接崩溃，而是回落为 `data_gaps` 并输出保守结论
+- 抓取器会优先读取 `HTTP_PROXY` / `HTTPS_PROXY`，代理失败后自动回退直连
 
 运行：
 
@@ -37,6 +38,15 @@ python3 -m daily_investment_brief.cli --asset a_share_dividend_low_vol --render-
 - `nasdaq100`
 - `semiconductor`
 - `a_share_dividend_low_vol`
+
+代理示例：
+
+```bash
+HTTP_PROXY=http://127.0.0.1:7897 \
+HTTPS_PROXY=http://127.0.0.1:7897 \
+PYTHONPATH=skills/daily-investment-brief/src \
+python3 -m daily_investment_brief.cli --asset semiconductor --render-mode report
+```
 
 测试与验证：
 

@@ -204,6 +204,30 @@ def parse_eastmoney_quote_page(text: str, name: str) -> tuple[MetricObservation,
     return price_observation, volume_observation
 
 
+def parse_csindex_intraday_header(name: str, text: str) -> tuple[MetricObservation, MetricObservation]:
+    payload = json.loads(text)
+    header = payload["data"]["intraDayHeader"]
+    if not header:
+        raise ValueError("failed to parse CSI index intraday header")
+    latest = float(header["current"])
+    previous = float(header["closePre"])
+    price_observation = MetricObservation(
+        name=name,
+        latest_value=latest,
+        previous_value=previous,
+        comparison_basis="前一交易日",
+        direction=_direction(latest, previous),
+    )
+    turnover_observation = MetricObservation(
+        name="成交额",
+        latest_value=float(header["tradingValue"]),
+        previous_value=float(header["tradingValue"]),
+        comparison_basis="当日成交额",
+        direction="持平",
+    )
+    return price_observation, turnover_observation
+
+
 def parse_etfdb_pe_ratio(name: str, text: str, symbol: str) -> MetricObservation:
     pattern = re.compile(
         rf"{re.escape(symbol)} Valuation.*?{re.escape(symbol)}\s+P/E Ratio\s+([0-9.]+).*?ETF Database Category Average\s+P/E Ratio\s+([0-9.]+)",
@@ -426,11 +450,13 @@ class MarketDataFetcher:
     def fetch_a_share_dividend_low_vol(self) -> tuple[dict[str, MetricObservation], list[dict[str, str]]]:
         observations: dict[str, MetricObservation] = {}
         gaps: list[dict[str, str]] = []
+        csindex_low_vol_url = "https://www.csindex.com.cn/csindex-home/perf/index-perf-oneday?indexCode=930955"
+        eastmoney_low_vol_url = "https://r.jina.ai/http://quote.eastmoney.com/sh512890.html"
         for metric, fn, severity in [
-            ("price_snapshot", lambda: parse_eastmoney_quote_page(_read_text("https://r.jina.ai/http://quote.eastmoney.com/sh512890.html"), "红利低波ETF华泰柏瑞")[0], "core"),
+            ("price_snapshot", lambda: parse_csindex_intraday_header("红利低波100", _read_text(csindex_low_vol_url))[0], "core"),
             ("china10y_yield", lambda: parse_tradingeconomics_china_10y(_read_text("https://r.jina.ai/http://www.tradingeconomics.com/china/government-bond-yield")), "non_core"),
             ("excess_return_vs_csi300", lambda: self._compute_a_share_excess_return(), "non_core"),
-            ("volume", lambda: parse_eastmoney_quote_page(_read_text("https://r.jina.ai/http://quote.eastmoney.com/sh512890.html"), "红利低波ETF华泰柏瑞")[1], "non_core"),
+            ("volume", lambda: parse_csindex_intraday_header("红利低波100", _read_text(csindex_low_vol_url))[1], "non_core"),
             ("vix", lambda: parse_cboe_vix_history(_read_text("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv")), "non_core"),
             ("cnn_fear_greed", lambda: parse_cnn_fear_greed_text(_read_text("https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/")), "non_core"),
         ]:
@@ -439,13 +465,35 @@ class MarketDataFetcher:
                 observations[metric] = observation
             if gap:
                 gaps.append(gap)
+        if "price_snapshot" not in observations:
+            fallback_price, fallback_gap = self._safe_collect(
+                "price_snapshot",
+                lambda: parse_eastmoney_quote_page(_read_text(eastmoney_low_vol_url), "红利低波ETF华泰柏瑞")[0],
+                "core",
+            )
+            if fallback_price:
+                observations["price_snapshot"] = fallback_price
+                gaps = [gap for gap in gaps if gap["metric"] != "price_snapshot"]
+            if fallback_gap and all(gap["metric"] != "price_snapshot" for gap in gaps):
+                gaps.append(fallback_gap)
+        if "volume" not in observations:
+            fallback_volume, fallback_gap = self._safe_collect(
+                "volume",
+                lambda: parse_eastmoney_quote_page(_read_text(eastmoney_low_vol_url), "红利低波ETF华泰柏瑞")[1],
+                "non_core",
+            )
+            if fallback_volume:
+                observations["volume"] = fallback_volume
+                gaps = [gap for gap in gaps if gap["metric"] != "volume"]
+            if fallback_gap and all(gap["metric"] != "volume" for gap in gaps):
+                gaps.append(fallback_gap)
         return observations, gaps
 
     def _compute_a_share_excess_return(self) -> MetricObservation:
-        dividend_page = _read_text("https://r.jina.ai/http://quote.eastmoney.com/sh512890.html")
-        csi300_page = _read_text("https://r.jina.ai/http://quote.eastmoney.com/sh510300.html")
-        dividend_obs, _ = parse_eastmoney_quote_page(dividend_page, "红利低波ETF华泰柏瑞")
-        csi300_obs, _ = parse_eastmoney_quote_page(csi300_page, "沪深300ETF华泰柏瑞")
+        dividend_page = _read_text("https://www.csindex.com.cn/csindex-home/perf/index-perf-oneday?indexCode=930955")
+        csi300_page = _read_text("https://www.csindex.com.cn/csindex-home/perf/index-perf-oneday?indexCode=000300")
+        dividend_obs, _ = parse_csindex_intraday_header("红利低波100", dividend_page)
+        csi300_obs, _ = parse_csindex_intraday_header("沪深300", csi300_page)
         dividend_return = (float(dividend_obs.latest_value) / float(dividend_obs.previous_value) - 1) * 100
         csi300_return = (float(csi300_obs.latest_value) / float(csi300_obs.previous_value) - 1) * 100
         excess = dividend_return - csi300_return

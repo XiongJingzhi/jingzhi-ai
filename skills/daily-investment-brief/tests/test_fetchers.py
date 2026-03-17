@@ -4,6 +4,7 @@ from daily_investment_brief.fetchers import (
     MarketDataFetcher,
     _READ_CACHE,
     get_proxy_map,
+    parse_csindex_intraday_header,
     parse_cnn_market_momentum,
     parse_cnn_stock_breadth,
     parse_eastmoney_quote_page,
@@ -217,6 +218,22 @@ def test_parse_eastmoney_quote_page_returns_latest_previous_and_volume():
     assert volume.direction == "持平"
 
 
+def test_parse_csindex_intraday_header_returns_price_and_turnover():
+    text = """
+{"code":"200","msg":"Success","data":{"intraDayHeader":{"indexCode":"930955","tradeDate":"2026-03-17","tradeTime":"16:29:57","openToday":12255.42,"closePre":12267.2,"current":12270.09,"change":2.89,"changePct":0.02,"tradingVol":7581.81,"tradingValue":710.33},"intraDayPerfList":[]}}
+"""
+
+    observation, turnover = parse_csindex_intraday_header("红利低波100", text)
+
+    assert observation.name == "红利低波100"
+    assert observation.latest_value == 12270.09
+    assert observation.previous_value == 12267.2
+    assert observation.direction == "上升"
+    assert turnover.name == "成交额"
+    assert turnover.latest_value == 710.33
+    assert turnover.direction == "持平"
+
+
 def test_parse_etfdb_pe_ratio_extracts_current_value():
     text = """
 QQQ Valuation
@@ -375,3 +392,24 @@ def test_fetcher_returns_gaps_instead_of_crashing_when_source_fails(monkeypatch)
 
     assert observations == {}
     assert {gap["metric"] for gap in data_gaps} >= {"price_snapshot", "forward_pe", "pb", "us10y_yield", "vix", "cnn_fear_greed"}
+
+
+def test_fetch_a_share_dividend_low_vol_prefers_official_index_source(monkeypatch):
+    fetcher = MarketDataFetcher()
+    responses = {
+        "https://www.csindex.com.cn/csindex-home/perf/index-perf-oneday?indexCode=930955": '{"code":"200","msg":"Success","data":{"intraDayHeader":{"indexCode":"930955","tradeDate":"2026-03-17","tradeTime":"16:29:57","openToday":12255.42,"closePre":12267.2,"current":12270.09,"change":2.89,"changePct":0.02,"tradingVol":7581.81,"tradingValue":710.33},"intraDayPerfList":[]}}',
+        "https://www.csindex.com.cn/csindex-home/perf/index-perf-oneday?indexCode=000300": '{"code":"200","msg":"Success","data":{"intraDayHeader":{"indexCode":"000300","tradeDate":"2026-03-17","tradeTime":"16:29:57","openToday":4685.57,"closePre":4671.56,"current":4637.44,"change":-34.12,"changePct":-0.73,"tradingVol":26302.19,"tradingValue":5785.02},"intraDayPerfList":[]}}',
+        "https://r.jina.ai/http://www.tradingeconomics.com/china/government-bond-yield": "The yield on China 10Y Bond Yield held steady at 1.83% on March 17, 2026. Over the past month, the yield has edged up by 0.04 points, though it remains 0.10 points lower than a year ago.",
+        "https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv": "DATE,OPEN,HIGH,LOW,CLOSE\n03/13/2026,27.85,28.47,24.67,27.19\n03/16/2026,25.88,26.42,23.23,23.51",
+        "https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/": "Fear & Greed Index Overview Timeline 22 Previous close 18 1 week ago 26",
+    }
+
+    monkeypatch.setattr("daily_investment_brief.fetchers._read_text", lambda url: responses[url])
+
+    observations, data_gaps = fetcher.fetch_a_share_dividend_low_vol()
+
+    assert observations["price_snapshot"].name == "红利低波100"
+    assert observations["price_snapshot"].latest_value == 12270.09
+    assert observations["volume"].name == "成交额"
+    assert observations["excess_return_vs_csi300"].direction == "改善"
+    assert all(gap["metric"] != "price_snapshot" for gap in data_gaps)

@@ -35,6 +35,13 @@ PRIORITIES = {
     ],
 }
 
+SECONDARY_PRIORITIES = {
+    "sp500": ["pb", "dividend_yield"],
+    "nasdaq100": ["market_breadth", "concentration", "dividend_yield"],
+    "semiconductor": ["concentration", "dividend_yield"],
+    "a_share_dividend_low_vol": ["volume"],
+}
+
 
 def _build_gap(metric: str, severity: str = "core") -> dict[str, str]:
     return asdict(DataGap(metric=metric, severity=severity, impact=MISSING_IMPACT))
@@ -55,6 +62,7 @@ def _implication(metric_key: str, direction: str) -> str:
         "global_semiconductor_sales_growth": {"改善": "行业景气继续回升", "恶化": "行业景气修复放缓", "持平": "行业景气变化有限"},
         "tsmc_monthly_revenue_yoy": {"改善": "龙头营收验证需求回暖", "恶化": "龙头营收动能走弱", "持平": "龙头营收动能变化有限"},
         "equipment_order_trend": {"改善": "设备订单开始回暖", "恶化": "设备订单仍未确认回升", "持平": "设备订单仍待确认"},
+        "volume": {"上升": "成交活跃度提升", "下降": "成交活跃度回落", "持平": "成交活跃度变化有限"},
         "cnn_fear_greed": {"上升": "风险偏好改善", "下降": "风险偏好走弱", "持平": "风险偏好变化有限"},
         "vix": {"上升": "短期避险情绪升温", "下降": "短期恐慌缓和", "持平": "短期恐慌变化有限"},
         "price_snapshot": {"上升": "价格走势偏强", "下降": "价格走势转弱", "持平": "价格走势中性"},
@@ -164,24 +172,37 @@ def analyze_asset(
     stance, explanation = _stance(asset_type, observations, gaps)
     confidence = "low" if any(gap["severity"] == "core" for gap in gaps) else "medium"
 
+    def append_key_data(metric_key: str, priority: int) -> None:
+        obs = observations[metric_key]
+        obs.implication = obs.implication or _implication(metric_key, obs.direction)
+        key_data.append(
+            {
+                "name": obs.name,
+                "latest_value": obs.latest_value,
+                "previous_value": obs.previous_value,
+                "comparison_basis": obs.comparison_basis,
+                "direction": obs.direction,
+                "implication": obs.implication,
+                "priority": priority,
+            }
+        )
+
     key_data = []
+    used_keys: set[str] = set()
     for priority, key in enumerate(priorities, start=1):
         if key in observations:
-            obs = observations[key]
-            obs.implication = obs.implication or _implication(key, obs.direction)
-            key_data.append(
-                {
-                    "name": obs.name,
-                    "latest_value": obs.latest_value,
-                    "previous_value": obs.previous_value,
-                    "comparison_basis": obs.comparison_basis,
-                    "direction": obs.direction,
-                    "implication": obs.implication,
-                    "priority": priority,
-                }
-            )
+            append_key_data(key, priority)
+            used_keys.add(key)
         if len(key_data) >= 6:
             break
+
+    if len(key_data) < 4:
+        for offset, key in enumerate(SECONDARY_PRIORITIES.get(asset_type, []), start=len(priorities) + 1):
+            if key in observations and key not in used_keys:
+                append_key_data(key, offset)
+                used_keys.add(key)
+            if len(key_data) >= 4:
+                break
 
     sentiment = {}
     for key in ("cnn_fear_greed", "vix"):

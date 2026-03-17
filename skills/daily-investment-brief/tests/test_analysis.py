@@ -68,6 +68,24 @@ def test_nasdaq_structure_signal_can_trigger_split():
     assert any(item["name"] == "集中度" for item in result["analysis_json"]["key_data"])
 
 
+def test_a_share_report_uses_secondary_metric_to_avoid_sparse_key_data():
+    result = analyze_asset(
+        asset_type="a_share_dividend_low_vol",
+        observations={
+            "price_snapshot": obs("红利低波100", 12270.09, 12267.2, "上升"),
+            "china10y_yield": obs("中国10年国债", 1.83, 1.79, "上升"),
+            "excess_return_vs_csi300": obs("相对沪深300超额收益", 0.7539, 0.0, "改善"),
+            "volume": obs("成交额", 710.33, 710.33, "持平"),
+            "vix": obs("VIX", 23.51, 27.19, "下降"),
+        },
+        data_gaps=[],
+    )
+
+    assert len(result["analysis_json"]["key_data"]) == 4
+    assert result["analysis_json"]["key_data"][-1]["name"] == "成交额"
+    assert result["analysis_json"]["key_data"][-1]["implication"] == "成交活跃度变化有限"
+
+
 def test_rendered_report_keeps_sentiment_separate():
     result = analyze_asset(
         asset_type="semiconductor",

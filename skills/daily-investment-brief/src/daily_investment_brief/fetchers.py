@@ -242,6 +242,21 @@ def parse_etfdb_dividend_yield(name: str, text: str, symbol: str) -> MetricObser
     )
 
 
+def parse_etfdb_top10_concentration(name: str, text: str) -> MetricObservation:
+    match = re.search(r"\|\s*% of Assets in Top 10\s*\|\s*([0-9.]+)%\s*\|\s*([0-9.]+)%\s*\|", text)
+    if not match:
+        raise ValueError("failed to parse ETFDB top 10 concentration")
+    latest = _to_float(match.group(1))
+    previous = _to_float(match.group(2))
+    return MetricObservation(
+        name=name,
+        latest_value=latest,
+        previous_value=previous,
+        comparison_basis="ETF类别均值代理",
+        direction=_direction(latest, previous),
+    )
+
+
 def parse_sia_monthly_sales_page(text: str) -> MetricObservation:
     match = re.search(
         r"global semiconductor sales were \$([0-9.]+) billion .*?increase(?: of)? ([0-9.]+)% compared to .*? and ([0-9.]+)% (?:more than|year-to-year)",
@@ -372,6 +387,7 @@ class MarketDataFetcher:
             ("price_snapshot", lambda: parse_csv_price_history("纳斯达克100", _read_text("https://stooq.com/q/d/l/?s=%5Endq&i=d")), "core"),
             ("forward_pe", lambda: parse_etfdb_pe_ratio("Forward PE", _read_text(qqq_text), "QQQ"), "core"),
             ("dividend_yield", lambda: parse_etfdb_dividend_yield("股息率", _read_text(qqq_text), "QQQ"), "non_core"),
+            ("concentration", lambda: parse_etfdb_top10_concentration("集中度", _read_text(qqq_text)), "non_core"),
             ("dxy", lambda: parse_fred_series("DXY", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTWEXBGS")), "non_core"),
             ("us10y_yield", lambda: parse_fred_series("10年美债", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10")), "non_core"),
             ("market_breadth", lambda: parse_cnn_stock_breadth(_read_text("https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/")), "non_core"),
@@ -395,6 +411,7 @@ class MarketDataFetcher:
             ("tsmc_monthly_revenue_yoy", lambda: parse_tsmc_monthly_revenue_pages(_read_text("https://r.jina.ai/http://investor.tsmc.com/english/monthly-revenue/2026"), _read_text("https://r.jina.ai/http://investor.tsmc.com/english/monthly-revenue/2025")), "core"),
             ("forward_pe", lambda: parse_etfdb_pe_ratio("Forward PE", _read_text(soxx_text), "SOXX"), "non_core"),
             ("dividend_yield", lambda: parse_etfdb_dividend_yield("股息率", _read_text(soxx_text), "SOXX"), "non_core"),
+            ("concentration", lambda: parse_etfdb_top10_concentration("集中度", _read_text(soxx_text)), "non_core"),
             ("us10y_yield", lambda: parse_fred_series("10年美债", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10")), "non_core"),
             ("vix", lambda: parse_cboe_vix_history(_read_text("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv")), "non_core"),
             ("cnn_fear_greed", lambda: parse_cnn_fear_greed_text(_read_text("https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/")), "non_core"),

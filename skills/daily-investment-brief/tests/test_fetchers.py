@@ -9,6 +9,7 @@ from daily_investment_brief.fetchers import (
     parse_eastmoney_quote_page,
     parse_etfdb_dividend_yield,
     parse_etfdb_pe_ratio,
+    parse_etfdb_top10_concentration,
     parse_cnn_fear_greed_text,
     parse_csv_price_history,
     parse_cboe_vix_history,
@@ -257,6 +258,22 @@ QQQ Dividend
     assert observation.latest_value == 0.47
     assert observation.previous_value == 1.31
     assert observation.direction == "下降"
+
+
+def test_parse_etfdb_top10_concentration_extracts_value():
+    text = """
+### Holdings Comparison
+
+| Number of Holdings | 31 | 61 |
+| % of Assets in Top 10 | 57.45% | 52.88% |
+| % of Assets in Top 15 | 76.95% | 65.79% |
+"""
+
+    observation = parse_etfdb_top10_concentration("集中度", text)
+
+    assert observation.latest_value == 57.45
+    assert observation.previous_value == 52.88
+    assert observation.direction == "上升"
 
 
 def test_parse_sia_monthly_sales_page_extracts_sales_and_growth():

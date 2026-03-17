@@ -15,8 +15,32 @@
 - 情绪指标必须出现，但只能辅助确认
 - 核心数据缺失时自动保守，不强下判断
 
-验证：
+当前实现：
+- 提供可执行 CLI，主动抓取公开市场数据后生成报告
+- 已接入的稳定源包括 `Stooq`、`FRED`、`CBOE`、`CNN` 页面解析、`Multpl` 页面解析，以及 A 股 ETF 行情接口
+- 任一上游超时或断连时，不会直接崩溃，而是回落为 `data_gaps` 并输出保守结论
+
+运行：
 
 ```bash
+PYTHONPATH=skills/daily-investment-brief/src \
+python3 -m daily_investment_brief.cli --asset sp500 --render-mode report
+```
+
+```bash
+PYTHONPATH=skills/daily-investment-brief/src \
+python3 -m daily_investment_brief.cli --asset a_share_dividend_low_vol --render-mode both
+```
+
+支持的 `--asset`：
+- `sp500`
+- `nasdaq100`
+- `semiconductor`
+- `a_share_dividend_low_vol`
+
+测试与验证：
+
+```bash
+pytest skills/daily-investment-brief/tests
 python3 skills/daily-investment-brief/validate_skill.py
 ```

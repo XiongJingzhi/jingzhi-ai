@@ -17,7 +17,7 @@ ASSET_LABELS = {
 
 PRIORITIES = {
     "sp500": ["price_snapshot", "forward_pe", "eps_revision", "us10y_yield", "market_breadth"],
-    "nasdaq100": ["price_snapshot", "forward_pe", "eps_revision", "us10y_yield", "dxy"],
+    "nasdaq100": ["price_snapshot", "forward_pe", "eps_revision", "us10y_yield", "dxy", "market_breadth", "concentration"],
     "semiconductor": [
         "price_snapshot",
         "global_semiconductor_sales_growth",
@@ -47,6 +47,7 @@ def _implication(metric_key: str, direction: str) -> str:
         "us10y_yield": {"上升": "利率对估值形成压力", "下降": "利率压力缓和", "持平": "利率影响中性"},
         "china10y_yield": {"上升": "股息比较优势收窄", "下降": "股息比较优势改善", "持平": "利率比较变化有限"},
         "market_breadth": {"改善": "上涨扩散度改善", "恶化": "上涨质量转弱", "持平": "结构变化有限"},
+        "concentration": {"上升": "龙头集中度抬升，结构扩散不足", "下降": "龙头集中度回落，结构更均衡", "持平": "集中度变化有限"},
         "eps_revision": {"上修": "盈利预期改善", "下修": "盈利预期转弱", "持平": "盈利预期变化有限"},
         "dxy": {"上升": "美元走强通常不利成长估值", "下降": "美元压力缓和", "持平": "美元影响中性"},
         "dividend_yield": {"上升": "股息吸引力提升", "下降": "股息吸引力回落", "持平": "股息吸引力稳定"},
@@ -91,6 +92,14 @@ def _score_signals(asset_type: str, observations: dict[str, MetricObservation]) 
             if key == "eps_revision" and obs.direction == "上修":
                 positive += 1
             if key == "eps_revision" and obs.direction == "下修":
+                negative += 1
+            if key == "market_breadth" and obs.direction == "改善":
+                positive += 1
+            if key == "market_breadth" and obs.direction == "恶化":
+                negative += 1
+            if key == "concentration" and obs.direction == "下降":
+                positive += 1
+            if key == "concentration" and obs.direction == "上升":
                 negative += 1
         elif asset_type == "semiconductor":
             if key == "price_snapshot" and obs.direction == "上升":
@@ -171,7 +180,7 @@ def analyze_asset(
                     "priority": priority,
                 }
             )
-        if len(key_data) >= 4:
+        if len(key_data) >= 6:
             break
 
     sentiment = {}

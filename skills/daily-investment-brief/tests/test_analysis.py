@@ -49,6 +49,25 @@ def test_signal_conflict_returns_signal_split():
     assert "当前信号分化" in result["report_text"]
 
 
+def test_nasdaq_structure_signal_can_trigger_split():
+    result = analyze_asset(
+        asset_type="nasdaq100",
+        observations={
+            "price_snapshot": obs("纳斯达克100", 22462.73, 22374.18, "上升"),
+            "forward_pe": obs("Forward PE", 31.0, 31.0, "持平"),
+            "eps_revision": obs("EPS预期", 252.0, 252.8, "下修"),
+            "us10y_yield": obs("10年美债", 4.28, 4.28, "持平"),
+            "dxy": obs("DXY", 104.3, 104.3, "持平"),
+            "concentration": obs("集中度", 57.45, 52.88, "上升"),
+            "vix": obs("VIX", 23.51, 27.19, "下降"),
+        },
+        data_gaps=[],
+    )
+
+    assert result["analysis_json"]["stance"] == "信号分化"
+    assert any(item["name"] == "集中度" for item in result["analysis_json"]["key_data"])
+
+
 def test_rendered_report_keeps_sentiment_separate():
     result = analyze_asset(
         asset_type="semiconductor",

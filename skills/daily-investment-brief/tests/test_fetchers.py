@@ -4,6 +4,8 @@ from daily_investment_brief.fetchers import (
     parse_cnn_market_momentum,
     parse_cnn_stock_breadth,
     parse_eastmoney_quote_page,
+    parse_etfdb_dividend_yield,
+    parse_etfdb_pe_ratio,
     parse_cnn_fear_greed_text,
     parse_csv_price_history,
     parse_cboe_vix_history,
@@ -13,6 +15,7 @@ from daily_investment_brief.fetchers import (
     parse_multpl_current_percent_page,
     parse_sia_monthly_sales_page,
     parse_tsmc_monthly_revenue_pages,
+    parse_tradingeconomics_china_10y,
 )
 
 
@@ -187,6 +190,49 @@ def test_parse_eastmoney_quote_page_returns_latest_previous_and_volume():
     assert volume.direction == "持平"
 
 
+def test_parse_etfdb_pe_ratio_extracts_current_value():
+    text = """
+QQQ Valuation
+-------------
+This section compares the P/E ratio of this ETF to its peers.
+
+QQQ
+
+P/E Ratio
+
+31.89
+
+ETF Database Category Average
+
+P/E Ratio
+
+20.47
+"""
+
+    observation = parse_etfdb_pe_ratio("Forward PE", text, "QQQ")
+
+    assert observation.latest_value == 31.89
+    assert observation.previous_value == 20.47
+    assert observation.direction == "上升"
+
+
+def test_parse_etfdb_dividend_yield_extracts_current_value():
+    text = """
+QQQ Dividend
+-------------
+
+|  | QQQ | ETF Database Category Average | FactSet Segment Average |
+| --- | --- | --- | --- |
+| Annual Dividend Yield | 0.47% | 1.31% | 3.31% |
+"""
+
+    observation = parse_etfdb_dividend_yield("股息率", text, "QQQ")
+
+    assert observation.latest_value == 0.47
+    assert observation.previous_value == 1.31
+    assert observation.direction == "下降"
+
+
 def test_parse_sia_monthly_sales_page_extracts_sales_and_growth():
     text = """
 global semiconductor sales were $82.5 billion during the month of January 2026, an increase of 3.7% compared to the December 2025 total of $79.6 billion and 46.1% more than the January 2025 total of $56.5 billion.
@@ -218,6 +264,18 @@ Total | 3809,050 | 31.6%
     assert observation.latest_value == 36.8
     assert observation.previous_value == 27.0
     assert observation.direction == "改善"
+
+
+def test_parse_tradingeconomics_china_10y_extracts_latest_and_month_delta():
+    text = """
+The yield on China 10Y Bond Yield held steady at 1.83% on March 17, 2026. Over the past month, the yield has edged up by 0.04 points, though it remains 0.10 points lower than a year ago.
+"""
+
+    observation = parse_tradingeconomics_china_10y(text)
+
+    assert observation.latest_value == 1.83
+    assert observation.previous_value == 1.79
+    assert observation.direction == "上升"
 
 
 def test_get_proxy_map_reads_uppercase_and_lowercase_env(monkeypatch):

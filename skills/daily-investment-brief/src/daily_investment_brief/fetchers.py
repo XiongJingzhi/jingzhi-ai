@@ -203,6 +203,44 @@ def parse_eastmoney_quote_page(text: str, name: str) -> tuple[MetricObservation,
     return price_observation, volume_observation
 
 
+def parse_etfdb_pe_ratio(name: str, text: str, symbol: str) -> MetricObservation:
+    pattern = re.compile(
+        rf"{re.escape(symbol)} Valuation.*?{re.escape(symbol)}\s+P/E Ratio\s+([0-9.]+).*?ETF Database Category Average\s+P/E Ratio\s+([0-9.]+)",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        raise ValueError(f"failed to parse ETFDB P/E for {symbol}")
+    latest = _to_float(match.group(1))
+    previous = _to_float(match.group(2))
+    return MetricObservation(
+        name=name,
+        latest_value=latest,
+        previous_value=previous,
+        comparison_basis="ETF类别均值代理",
+        direction=_direction(latest, previous),
+    )
+
+
+def parse_etfdb_dividend_yield(name: str, text: str, symbol: str) -> MetricObservation:
+    pattern = re.compile(
+        rf"\|\s*Annual Dividend Yield\s*\|\s*([0-9.]+)%\s*\|\s*([0-9.]+)%\s*\|",
+        re.DOTALL,
+    )
+    match = pattern.search(text)
+    if not match:
+        raise ValueError(f"failed to parse ETFDB dividend yield for {symbol}")
+    latest = _to_float(match.group(1))
+    previous = _to_float(match.group(2))
+    return MetricObservation(
+        name=name,
+        latest_value=latest,
+        previous_value=previous,
+        comparison_basis="ETF类别均值代理",
+        direction=_direction(latest, previous),
+    )
+
+
 def parse_sia_monthly_sales_page(text: str) -> MetricObservation:
     match = re.search(
         r"global semiconductor sales were \$([0-9.]+) billion .*?increase(?: of)? ([0-9.]+)% compared to .*? and ([0-9.]+)% (?:more than|year-to-year)",
@@ -241,6 +279,26 @@ def parse_tsmc_monthly_revenue_pages(current_year_text: str, previous_year_text:
         previous_value=previous_yoy,
         comparison_basis="前一发布值",
         direction="改善" if latest_yoy > previous_yoy else "恶化" if latest_yoy < previous_yoy else "持平",
+    )
+
+
+def parse_tradingeconomics_china_10y(text: str) -> MetricObservation:
+    match = re.search(
+        r"The yield on China 10Y Bond Yield .*? at ([0-9.]+)% .*? past month, the yield has edged (up|down) by ([0-9.]+) points",
+        text,
+        re.IGNORECASE | re.DOTALL,
+    )
+    if not match:
+        raise ValueError("failed to parse TradingEconomics China 10Y")
+    latest = _to_float(match.group(1))
+    delta = _to_float(match.group(3))
+    previous = latest - delta if match.group(2).lower() == "up" else latest + delta
+    return MetricObservation(
+        name="中国10年国债",
+        latest_value=latest,
+        previous_value=round(previous, 4),
+        comparison_basis="前一月",
+        direction=_direction(latest, previous),
     )
 
 
@@ -304,8 +362,11 @@ class MarketDataFetcher:
     def fetch_nasdaq100(self) -> tuple[dict[str, MetricObservation], list[dict[str, str]]]:
         observations: dict[str, MetricObservation] = {}
         gaps: list[dict[str, str]] = []
+        qqq_text = "https://r.jina.ai/http://etfdb.com/etf/QQQ/"
         for metric, fn, severity in [
             ("price_snapshot", lambda: parse_csv_price_history("纳斯达克100", _read_text("https://stooq.com/q/d/l/?s=%5Endq&i=d")), "core"),
+            ("forward_pe", lambda: parse_etfdb_pe_ratio("Forward PE", _read_text(qqq_text), "QQQ"), "core"),
+            ("dividend_yield", lambda: parse_etfdb_dividend_yield("股息率", _read_text(qqq_text), "QQQ"), "non_core"),
             ("dxy", lambda: parse_fred_series("DXY", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DTWEXBGS")), "non_core"),
             ("us10y_yield", lambda: parse_fred_series("10年美债", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10")), "non_core"),
             ("market_breadth", lambda: parse_cnn_stock_breadth(_read_text("https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/")), "non_core"),
@@ -322,10 +383,13 @@ class MarketDataFetcher:
     def fetch_semiconductor(self) -> tuple[dict[str, MetricObservation], list[dict[str, str]]]:
         observations: dict[str, MetricObservation] = {}
         gaps: list[dict[str, str]] = []
+        soxx_text = "https://r.jina.ai/http://etfdb.com/etf/SOXX/"
         for metric, fn, severity in [
             ("price_snapshot", lambda: parse_csv_price_history("半导体指数", _read_text("https://stooq.com/q/d/l/?s=soxx.us&i=d")), "core"),
             ("global_semiconductor_sales_growth", lambda: parse_sia_monthly_sales_page(_read_text("https://r.jina.ai/http://www.semiconductors.org/?s=January+2026+sales")), "core"),
             ("tsmc_monthly_revenue_yoy", lambda: parse_tsmc_monthly_revenue_pages(_read_text("https://r.jina.ai/http://investor.tsmc.com/english/monthly-revenue/2026"), _read_text("https://r.jina.ai/http://investor.tsmc.com/english/monthly-revenue/2025")), "core"),
+            ("forward_pe", lambda: parse_etfdb_pe_ratio("Forward PE", _read_text(soxx_text), "SOXX"), "non_core"),
+            ("dividend_yield", lambda: parse_etfdb_dividend_yield("股息率", _read_text(soxx_text), "SOXX"), "non_core"),
             ("us10y_yield", lambda: parse_fred_series("10年美债", _read_text("https://fred.stlouisfed.org/graph/fredgraph.csv?id=DGS10")), "non_core"),
             ("vix", lambda: parse_cboe_vix_history(_read_text("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv")), "non_core"),
             ("cnn_fear_greed", lambda: parse_cnn_fear_greed_text(_read_text("https://r.jina.ai/http://money.cnn.com/data/fear-and-greed/")), "non_core"),
@@ -342,6 +406,7 @@ class MarketDataFetcher:
         gaps: list[dict[str, str]] = []
         for metric, fn, severity in [
             ("price_snapshot", lambda: parse_eastmoney_quote_page(_read_text("https://r.jina.ai/http://quote.eastmoney.com/sh512890.html"), "红利低波ETF华泰柏瑞")[0], "core"),
+            ("china10y_yield", lambda: parse_tradingeconomics_china_10y(_read_text("https://r.jina.ai/http://www.tradingeconomics.com/china/government-bond-yield")), "non_core"),
             ("excess_return_vs_csi300", lambda: self._compute_a_share_excess_return(), "non_core"),
             ("volume", lambda: parse_eastmoney_quote_page(_read_text("https://r.jina.ai/http://quote.eastmoney.com/sh512890.html"), "红利低波ETF华泰柏瑞")[1], "non_core"),
             ("vix", lambda: parse_cboe_vix_history(_read_text("https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv")), "non_core"),

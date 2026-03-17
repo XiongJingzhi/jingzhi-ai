@@ -1,5 +1,8 @@
+import io
+
 from daily_investment_brief.fetchers import (
     MarketDataFetcher,
+    _READ_CACHE,
     get_proxy_map,
     parse_cnn_market_momentum,
     parse_cnn_stock_breadth,
@@ -113,6 +116,29 @@ Previous close
     assert observation.latest_value == 22
     assert observation.previous_value == 18
     assert observation.direction == "上升"
+
+
+def test_parse_cnn_fear_greed_text_supports_latest_section_layout():
+    text = """
+Latest Fear & Greed
+-------------------
+Fear & Greed Index
+Overview
+Timeline
+22
+Previous close
+22
+1 week ago
+26
+1 month ago
+40
+"""
+
+    observation = parse_cnn_fear_greed_text(text)
+
+    assert observation.latest_value == 22
+    assert observation.previous_value == 22
+    assert observation.direction == "持平"
 
 
 def test_parse_cnn_market_momentum_extracts_price_and_moving_average():
@@ -286,6 +312,38 @@ def test_get_proxy_map_reads_uppercase_and_lowercase_env(monkeypatch):
 
     assert proxies["http"] == "http://127.0.0.1:7897"
     assert proxies["https"] == "http://127.0.0.1:7898"
+
+
+def test_read_text_uses_in_memory_cache(monkeypatch):
+    class DummyResponse:
+        def __init__(self, body: str):
+            self.body = body
+
+        def read(self) -> bytes:
+            return self.body.encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    calls = {"count": 0}
+
+    class DummyOpener:
+        def open(self, req, timeout=20):
+            calls["count"] += 1
+            return DummyResponse("hello")
+
+    monkeypatch.setattr("daily_investment_brief.fetchers.urllib.request.build_opener", lambda *args, **kwargs: DummyOpener())
+    monkeypatch.setattr("daily_investment_brief.fetchers.get_proxy_map", lambda: {})
+    _READ_CACHE.clear()
+
+    from daily_investment_brief.fetchers import _read_text
+
+    assert _read_text("https://example.com/demo") == "hello"
+    assert _read_text("https://example.com/demo") == "hello"
+    assert calls["count"] == 1
 
 
 def test_fetcher_returns_gaps_instead_of_crashing_when_source_fails(monkeypatch):

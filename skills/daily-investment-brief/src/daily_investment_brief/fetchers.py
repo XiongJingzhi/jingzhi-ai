@@ -11,6 +11,7 @@ from .models import DataGap, MetricObservation
 
 
 MISSING_IMPACT = "当前缺少该项关键数据，结论只能暂时保守，不得强下判断。"
+_READ_CACHE: dict[str, str] = {}
 
 
 def _to_float(value: str) -> float:
@@ -312,6 +313,8 @@ def get_proxy_map() -> dict[str, str]:
 
 
 def _read_text(url: str) -> str:
+    if url in _READ_CACHE:
+        return _READ_CACHE[url]
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     errors: list[Exception] = []
     proxy_map = get_proxy_map()
@@ -322,7 +325,9 @@ def _read_text(url: str) -> str:
     for opener in openers:
         try:
             with opener.open(req, timeout=20) as response:
-                return response.read().decode("utf-8", "ignore")
+                text = response.read().decode("utf-8", "ignore")
+                _READ_CACHE[url] = text
+                return text
         except Exception as exc:
             errors.append(exc)
     raise errors[-1]

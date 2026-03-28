@@ -1,0 +1,2 @@
+[console_scripts]
+daily-investment-brief = daily_investment_brief.cli:entrypoint
